@@ -15,6 +15,7 @@ individual_missingness <- 0.3 #Maximum % of loci missing in an individual to kee
 #Remove if monomorphic
 locus_missingness <- 0.1 #Maximum % of individuals missing in a locus to keep locus
 minor_allele_frequency <- 0.05
+LD_cutoff <- 0.3 #Linkage disequilibrium cutoff 
 
 #### Functions ####
 process_angsd <- function(genotype_file, probability_file, sample_names, cutoff){
@@ -111,7 +112,7 @@ genlight_to_gds <- function(gen_light, out_name){
                               genmat = as.matrix(gen_light), 
                               sample.id = gen_light@ind.names, 
                               snp.id = gen_light@loc.names, 
-                              snp.chromosome = gen_light@chromosome, 
+                              snp.chromosome = str_extract(gen_light@chromosome, '[0-9]+') %>% as.integer,  
                               snp.position = gen_light@position, 
                               snp.allele = gen_light@loc.all, 
                               snpfirstdim = FALSE)
@@ -147,6 +148,17 @@ choose_snps <- function(genomic_data, samples_use = NULL, ...){
                                sample.id = samples_use, ...)
   snpgdsClose(genofile)
   snps_used
+}
+
+find_unlinked_loci <- function(gds_file, ...){
+  genofile <- snpgdsOpen(gds_file)
+  
+  prune_snps <- snpgdsLDpruning(genofile, autosome.only = FALSE, ...)
+  
+  snpgdsClose(genofile)
+  
+  unlist(prune_snps) %>%
+    unname
 }
 
 #### Read in data ####
@@ -236,5 +248,20 @@ write_csv(metadata_out, '../intermediate_files/preprocessed_metadata.csv')
 write_rds(filtered_apalm_acerv, '../intermediate_files/preprocessed_apalm_acerv.rds', compress = 'xz')
 write_rds(filtered_acerv, '../intermediate_files/preprocessed_acerv.rds', compress = 'xz')
 
-genlight_to_gds(filtered_apalm_acerv, '../intermediate_files/preprocessed_apalm_acerv.gds')
-genlight_to_gds(filtered_apalm_acerv, '../intermediate_files/preprocessed_acerv.gds')
+filtered_apalm_acerv_gds <- genlight_to_gds(filtered_apalm_acerv, 
+                                            '../intermediate_files/preprocessed_apalm_acerv.gds')
+filtered_acerv_gds <- genlight_to_gds(filtered_acerv, '../intermediate_files/preprocessed_acerv.gds')
+
+#### Filter for only Unlinked Loci ####
+unlinked_apalm_acerv <- find_unlinked_loci(filtered_apalm_acerv_gds, ld.threshold = LD_cutoff, 
+                                           method = 'composite', start.pos = 'random')
+unlinked_apalm_acerv <- filtered_apalm_acerv[,unlinked_apalm_acerv]
+write_rds(unlinked_apalm_acerv, '../intermediate_files/unlinked_apalm_acerv.rds', compress = 'xz')
+genlight_to_gds(unlinked_apalm_acerv, '../intermediate_files/unlinked_apalm_acerv.gds')
+
+
+unlinked_acerv <- find_unlinked_loci(filtered_acerv_gds, ld.threshold = LD_cutoff, 
+                                           method = 'composite', start.pos = 'random')
+unlinked_acerv <- filtered_acerv[,unlinked_acerv]
+write_rds(unlinked_acerv, '../intermediate_files/unlinked_acerv.rds', compress = 'xz')
+genlight_to_gds(unlinked_acerv, '../intermediate_files/unlinked_acerv.gds')
